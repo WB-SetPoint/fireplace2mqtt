@@ -2,56 +2,32 @@ name: Build DEB Package
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Create directories
         run: |
           mkdir -p fireplace2mqtt-package/DEBIAN
           mkdir -p fireplace2mqtt-package/mnt/data/python
           mkdir -p fireplace2mqtt-package/etc/systemd/system
-
       - name: Copy files
         run: |
-          # Проверка существования файлов
-          if [ ! -f fireplace_config.json ]; then
-            echo "Ошибка: fireplace_config.json не найден"
-            exit 1
-          fi
-
           cp fireplace_config.json fireplace2mqtt-package/mnt/data/python/
           cp fireplace2mqtt.py fireplace2mqtt-package/mnt/data/python/
           cp fireplace.service fireplace2mqtt-package/etc/systemd/system/
           cp DEBIAN/control fireplace2mqtt-package/DEBIAN/
           cp DEBIAN/postinst fireplace2mqtt-package/DEBIAN/
           cp DEBIAN/prerm fireplace2mqtt-package/DEBIAN/
-
-      - name: Make scripts executable
+      - name: Build DEB
         run: |
-          chmod +x fireplace2mqtt-package/DEBIAN/postinst
-          chmod +x fireplace2mqtt-package/DEBIAN/prerm
-          chmod +x fireplace2mqtt-package/mnt/data/python/fireplace2mqtt.py
-
-      - name: Validate directory structure
-        run: |
-          tree fireplace2mqtt-package
-          ls -l fireplace2mqtt-package/DEBIAN
-
-      - name: Build DEB package
-        run: dpkg-deb --build fireplace2mqtt-package fireplace2mqtt_1.0.0_all.deb
-
-      - name: Check DEB contents
-        run: dpkg -c fireplace2mqtt_1.0.0_all.deb
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+          version=$(echo $GITHUB_REF | cut -d '/' -f3)  # Извлекает версию из тега (например, v1.0.3 → 1.0.3)
+          dpkg-deb --build fireplace2mqtt-package fireplace2mqtt_${version}_all.deb
+      
+      - name: Publish to Release
+        uses: softprops/action-gh-release@v1
         with:
-          name: fireplace2mqtt-deb
-          path: fireplace2mqtt_1.0.0_all.deb
+          files: fireplace2mqtt_${{ env.VERSION }}_all.deb
