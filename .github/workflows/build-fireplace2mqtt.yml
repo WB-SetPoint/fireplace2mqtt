@@ -1,39 +1,37 @@
-name: Build DEB Package for Fireplace2MQTT
+name: Build DEB Package
 
 on:
   push:
-    branches: [main]  # Триггер при пуше в ветку main
-  workflow_dispatch:  # Можете запускать вручную
+    branches: [main]
+    tags: ["v*"]
 
 jobs:
-  build-deb:
-    runs-on: ubuntu-latest  # Используем Ubuntu для сборки
-
+  build:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.x
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.x
+          python-version: "3.x"
 
-      - name: Create directories for DEB package
+      - name: Create directories
         run: |
           mkdir -p fireplace2mqtt-package/DEBIAN
-          mkdir -p fireplace2mqtt-package/mnt/data/python/
+          mkdir -p fireplace2mqtt-package/mnt/data/python
+          mkdir -p fireplace2mqtt-package/etc/systemd/system
 
-      - name: Copy files to package structure
+      - name: Copy files
         run: |
-          # Копируем конфигурационный файл
+          # Конфигурационный файл
           cp fireplace_config.json fireplace2mqtt-package/mnt/data/python/
-          # Копируем файл json схемы
-          cp wb-mqtt-fireplace.schema.json /usr/share/wb-mqtt-confed/schemas/
-          # Копируем скрипт
+          # Скрипт
           cp fireplace2mqtt.py fireplace2mqtt-package/mnt/data/python/
-          # Копируем файл systemd
+          # Сервис systemd
           cp fireplace.service fireplace2mqtt-package/etc/systemd/system/
-          # Копируем метаданные пакета
+          # Метаданные DEB
           cp DEBIAN/control fireplace2mqtt-package/DEBIAN/
           cp DEBIAN/postinst fireplace2mqtt-package/DEBIAN/
           cp DEBIAN/prerm fireplace2mqtt-package/DEBIAN/
@@ -44,22 +42,16 @@ jobs:
           chmod +x fireplace2mqtt-package/DEBIAN/prerm
           chmod +x fireplace2mqtt-package/mnt/data/python/fireplace2mqtt.py
 
-      - name: Build DEB package
-        run: dpkg-deb --build fireplace2mqtt-package fireplace2mqtt_1.0.2_all.deb
+      - name: Check directory structure
+        run: |
+          tree fireplace2mqtt-package
+          ls -l fireplace2mqtt-package/DEBIAN
 
-      - name: Upload DEB package as artifact
+      - name: Build DEB package
+        run: dpkg-deb --build fireplace2mqtt-package fireplace2mqtt_1.0.0_all.deb
+
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: fireplace2mqtt-deb
-          path: fireplace2mqtt_1.0.2_all.deb
-
-      - name: Publish to GitHub Releases (опционально)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.repository_url }}/releases/${{ github.ref_name }}/upload_url
-          asset_path: fireplace2mqtt_1.0.2_all.deb
-          asset_name: fireplace2mqtt_1.0.2_all.deb
-          asset_content_type: application/x-deb
+          path: fireplace2mqtt_1.0.0_all.deb
