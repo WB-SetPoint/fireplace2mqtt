@@ -22,12 +22,13 @@ jobs:
         run: |
           mkdir -p fireplace2mqtt-package/DEBIAN
           mkdir -p fireplace2mqtt-package/mnt/data/python/
-          mkdir -p fireplace2mqtt-package/etc/systemd/system/
 
       - name: Copy files to package structure
         run: |
           # Копируем конфигурационный файл
           cp fireplace_config.json fireplace2mqtt-package/mnt/data/python/
+          # Копируем файл json схемы
+          cp wb-mqtt-fireplace.schema.json /usr/share/wb-mqtt-confed/schemas/
           # Копируем скрипт
           cp fireplace2mqtt.py fireplace2mqtt-package/mnt/data/python/
           # Копируем файл systemd
