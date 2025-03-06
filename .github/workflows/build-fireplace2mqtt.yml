@@ -1,0 +1,64 @@
+name: Build DEB Package for Fireplace2MQTT
+
+on:
+  push:
+    branches: [main]  # Триггер при пуше в ветку main
+  workflow_dispatch:  # Можете запускать вручную
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest  # Используем Ubuntu для сборки
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.x
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.x
+
+      - name: Create directories for DEB package
+        run: |
+          mkdir -p fireplace2mqtt-package/DEBIAN
+          mkdir -p fireplace2mqtt-package/mnt/data/python/
+          mkdir -p fireplace2mqtt-package/etc/systemd/system/
+
+      - name: Copy files to package structure
+        run: |
+          # Копируем конфигурационный файл
+          cp fireplace_config.json fireplace2mqtt-package/mnt/data/python/
+          # Копируем скрипт
+          cp fireplace2mqtt.py fireplace2mqtt-package/mnt/data/python/
+          # Копируем файл systemd
+          cp fireplace.service fireplace2mqtt-package/etc/systemd/system/
+          # Копируем метаданные пакета
+          cp DEBIAN/control fireplace2mqtt-package/DEBIAN/
+          cp DEBIAN/postinst fireplace2mqtt-package/DEBIAN/
+          cp DEBIAN/prerm fireplace2mqtt-package/DEBIAN/
+
+      - name: Make scripts executable
+        run: |
+          chmod +x fireplace2mqtt-package/DEBIAN/postinst
+          chmod +x fireplace2mqtt-package/DEBIAN/prerm
+          chmod +x fireplace2mqtt-package/mnt/data/python/fireplace2mqtt.py
+
+      - name: Build DEB package
+        run: dpkg-deb --build fireplace2mqtt-package fireplace2mqtt_1.0.0_all.deb
+
+      - name: Upload DEB package as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: fireplace2mqtt-deb
+          path: fireplace2mqtt_1.0.0_all.deb
+
+      - name: Publish to GitHub Releases (опционально)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.repository_url }}/releases/${{ github.ref_name }}/upload_url
+          asset_path: fireplace2mqtt_1.0.0_all.deb
+          asset_name: fireplace2mqtt_1.0.0_all.deb
+          asset_content_type: application/x-deb
