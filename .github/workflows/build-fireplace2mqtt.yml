@@ -12,11 +12,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.x"
-
       - name: Create directories
         run: |
           mkdir -p fireplace2mqtt-package/DEBIAN
@@ -25,13 +20,15 @@ jobs:
 
       - name: Copy files
         run: |
-          # Конфигурационный файл
+          # Проверка существования файлов
+          if [ ! -f fireplace_config.json ]; then
+            echo "Ошибка: fireplace_config.json не найден"
+            exit 1
+          fi
+
           cp fireplace_config.json fireplace2mqtt-package/mnt/data/python/
-          # Скрипт
           cp fireplace2mqtt.py fireplace2mqtt-package/mnt/data/python/
-          # Сервис systemd
           cp fireplace.service fireplace2mqtt-package/etc/systemd/system/
-          # Метаданные DEB
           cp DEBIAN/control fireplace2mqtt-package/DEBIAN/
           cp DEBIAN/postinst fireplace2mqtt-package/DEBIAN/
           cp DEBIAN/prerm fireplace2mqtt-package/DEBIAN/
@@ -42,13 +39,16 @@ jobs:
           chmod +x fireplace2mqtt-package/DEBIAN/prerm
           chmod +x fireplace2mqtt-package/mnt/data/python/fireplace2mqtt.py
 
-      - name: Check directory structure
+      - name: Validate directory structure
         run: |
           tree fireplace2mqtt-package
           ls -l fireplace2mqtt-package/DEBIAN
 
       - name: Build DEB package
         run: dpkg-deb --build fireplace2mqtt-package fireplace2mqtt_1.0.0_all.deb
+
+      - name: Check DEB contents
+        run: dpkg -c fireplace2mqtt_1.0.0_all.deb
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
