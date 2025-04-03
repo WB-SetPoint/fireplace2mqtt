@@ -1,0 +1,24 @@
+[
+  {
+    "manufacturer": "SсhonesFeuer",
+    "model": "3D Fireline",
+    "modelId": "/devices/(fireplace[0-9]{0,3})/controls/power/meta/type",
+    "name": "Камин",
+    "services": [
+      {
+        "name": "Включить",
+        "type": "Switch",
+        "characteristics": [
+          {
+            "type": "On",
+            "link": {
+            "type": "Integer",
+              "topicGet": "/devices/(1)/controls/power",
+              "topicSet": "/devices/(1)/controls/power/on"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]
