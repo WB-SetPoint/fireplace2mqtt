@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "Настройки конфигурации камина",
+    "options": {
+        "disable_edit_json": true,
+        "disable_collapse": true,
+        "disable_properties": true
+    },
+  "description": " ",
+  "type": "object",
+    "configFile": {
+        "path": "/mnt/data/python/fireplace_config.json",
+        "service": "fireplace"
+    },
+  "properties": {
+    "mqtt": {
+      "type": "object",
+      "_format": "grid",
+      "title": " ",
+    "options": {
+        "disable_edit_json": true,
+        "disable_collapse": true,
+        "disable_properties": true
+    },
+      "description": "Настройки MQTT",
+      "properties": {
+        "broker": {
+          "type": "string",
+		  "title": "MQTT брокер",
+	  	  "default": "localhost",
+          "description": "Адрес MQTT-брокера (localhost)",
+		  "propertyOrder": 1,
+		  "options": {"hidden": false,
+		  				"grid_columns": 2}
+        },
+        "name": {
+          "type": "string",
+		  "title": "Отображение в Устройствах",
+	  	  "default": "fireplace",
+          "description": "Имя устройства в MQTT Wirenboard",
+		  "propertyOrder": 2,
+		  "options": {"hidden": false,
+		  				"grid_columns": 2}
+        },
+        "port": {
+          "type": "integer",
+		  "title": "Номер порта",
+	  	  "default": 1883,
+          "description": "Порт MQTT-брокера",
+          "minimum": 1,
+          "maximum": 65535,
+		  "propertyOrder": 3,
+		  "options": {"hidden": false,
+		  				"grid_columns": 2}
+        },
+        "username": {
+          "type": "string",
+		  "title": "Пользователь",
+	  	  "default": "admin",
+          "description": "Имя пользователя для MQTT",
+		  "propertyOrder": 4,
+		  "options": {"hidden": false,
+		  				"grid_columns": 3}
+        },
+        "password": {
+          "type": "string",
+		  "title": "Пароль",
+	  	  "default": "password",
+          "description": "Пароль для MQTT",
+		  "propertyOrder": 5,
+		  "options": {"hidden": false,
+		  				"grid_columns": 3}
+        }
+      },
+      "required": ["broker", "port", "name", "username", "password"],
+      "additionalProperties": false
+    },
+    "device": {
+      "type": "object",
+      "_format": "grid",
+      "title": " ",
+    "options": {
+        "disable_edit_json": true,
+        "disable_collapse": true,
+        "disable_properties": true
+    },
+      "description": "Настройки связи с Камином",
+      "properties": {
+        "base_url": {
+          "type": "string",
+		  "title": "Адрес в локальной сети",
+	  	  "default": "192.168.0.10",
+          "description": "Базовый URL камина",
+		  "propertyOrder": 6,
+		  "options": {"hidden": false,
+		  				"grid_columns": 6}
+        },
+        "debug": {
+          "type": "boolean",
+		  "title": "Отладка",
+          "description": "Вывод в лог",
+		  "default": true,
+		  "_format": "checkbox",
+		  "propertyOrder": 7,
+		  "options": {"hidden": false,
+		  				"grid_columns": 6}
+        }
+      },
+      "required": ["base_url"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["mqtt", "device"],
+  "additionalProperties": false
+}
