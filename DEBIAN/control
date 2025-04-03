@@ -1,8 +1,0 @@
-Package: fireplace2mqtt
-Version: 1.0.0
-Section: utils
-Priority: optional
-Architecture: all
-Maintainer: Setpoint <controllerwirenboard@gmail.com>
-Depends: python3, python3-paho-mqtt, python3-requests
-Description: MQTT control for fireplace device

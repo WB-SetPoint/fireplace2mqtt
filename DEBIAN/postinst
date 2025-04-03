@@ -1,9 +1,0 @@
-#!/bin/bash
-set -e
-
-mkdir -p /mnt/data/python/
-chmod 755 /mnt/data/python/
-
-systemctl daemon-reload
-systemctl enable fireplace.service
-systemctl start fireplace.service
