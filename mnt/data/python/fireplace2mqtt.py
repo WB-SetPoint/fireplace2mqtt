@@ -1,265 +1,323 @@
-import signal
-import sys
-import paho.mqtt.client as mqtt
-import requests
 import json
 import time
-from threading import Thread
+import requests
+import paho.mqtt.client as mqtt
+import logging
+import signal
+import sys
+from datetime import datetime
 
-# Настройки MQTT
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%H:%M:%S"  # Формат времени: часы:минуты:секунды
+)
+logger = logging.getLogger(__name__)
 
-# Читаем конфиг из файла
-with open("/mnt/data/python/fireplace_config.json", "r") as config_file:
-    config = json.load(config_file)
+# Загрузка конфигурации из файла
+CONFIG_FILE = "/mnt/data/python/fireplace_config.json"
 
-# Настройки MQTT
-BROKER = config["mqtt"]["broker"]
-PORT = config["mqtt"]["port"]
-USERNAME = config["mqtt"]["username"]
-PASSWORD = config["mqtt"]["password"]
-
-# Настройки устройства
-DEVICE = config["device"]["name"]
-base_url_from_config = config["device"]["base_url"]
-BASE_URL = f"http://{base_url_from_config}"
-TOPICS = {
-    "power_on": f"/devices/{DEVICE}/controls/power_on/on",
-    "power_off": f"/devices/{DEVICE}/controls/power_off/on",
-    "meta_fireplace": f"/devices/{DEVICE}/meta",
-    "meta_power_on": f"/devices/{DEVICE}/controls/power_on/meta",
-    "meta_power_off": f"/devices/{DEVICE}/controls/power_off/meta",
-    "status": f"/devices/{DEVICE}/controls/status",
-    "meta_status": f"/devices/{DEVICE}/controls/status/meta",
-    "fire_mode": f"/devices/{DEVICE}/controls/fire_mode/on",
-    "meta_fire_mode": f"/devices/{DEVICE}/controls/fire_mode/meta",
-    "audio_mode": f"/devices/{DEVICE}/controls/audio_mode/on",
-    "meta_audio_mode": f"/devices/{DEVICE}/controls/audio_mode/meta",
-    "settings": f"/devices/{DEVICE}/controls/settings/on",
-    "meta_settings": f"/devices/{DEVICE}/controls/settings/meta",
-    "power_status": f"/devices/{DEVICE}/controls/power_status",
-    "meta_power_status": f"/devices/{DEVICE}/controls/power_status/meta",
-    "fill_status": f"/devices/{DEVICE}/controls/fill_status",
-    "meta_fill_status": f"/devices/{DEVICE}/controls/fill_status/meta",
-    "log": f"/devices/{DEVICE}/controls/log",
-    "meta_log": f"/devices/{DEVICE}/controls/log/meta" 
-}
-
-# Настройки HTTP запросов
-HTTP_URLS = {
-    "power_on": f"{BASE_URL}/analog?POWER=1",
-    "power_off": f"{BASE_URL}/analog?POWER=0",
-    "fire_mode_1": f"{BASE_URL}/SAVE?select_rez=1",
-    "fire_mode_2": f"{BASE_URL}/SAVE?select_rez=2",
-    "fire_mode_3": f"{BASE_URL}/SAVE?select_rez=3",
-    "fire_mode_4": f"{BASE_URL}/SAVE?select_rez=4",
-    "audio_mode_1": f"{BASE_URL}/SAVE?AUDIO_rej=0",
-    "audio_mode_2": f"{BASE_URL}/SAVE?AUDIO_rej=1",
-    "audio_mode_3": f"{BASE_URL}/SAVE?AUDIO_rej=2",
-    "settings": f"{BASE_URL}/jsonSetings"
-}
-HEADERS = {"Content-Type": "application/json"}
-
-def send_request(url):
+def load_config():
+    """Загружает конфигурацию из JSON-файла."""
     try:
-        response = requests.get(url, headers=HEADERS)
-        if response.status_code == 200:
-            print(f"Запрос успешный: {url}")
-        else:
-            print(f"Ошибка запроса: {response.status_code} для {url}")
+        with open(CONFIG_FILE, "r") as file:
+            config = json.load(file)
+            # Убедимся, что debug является булевым значением
+            if "device" in config and "debug" in config["device"]:
+                if isinstance(config["device"]["debug"], str):
+                    # Если debug задан как строка, преобразуем в булевый тип
+                    config["device"]["debug"] = config["device"]["debug"].lower() == "true"
+                # Если debug уже булевый, оставляем как есть
+            return config
     except Exception as e:
-        print(f"Ошибка: {e}")
+        logger.error(f"Ошибка загрузки конфигурации: {e}")
+        raise
 
-# Функция для получения JSON-данных из HTTP-запроса
-def fetch_json(url):
-    try:
-        response = requests.get(url, headers=HEADERS, timeout=5)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"Ошибка при получении JSON: {response.status_code} для {url}")
-            return None
-    except requests.exceptions.RequestException as e:
-        print(f"Ошибка HTTP-запроса: {e}")
-        return None
+# Загрузка конфигурации
+config = load_config()
 
-# Проверка статуса устройства каждые 5 секунд
-def check_device_status(client, url, status_topic, power_status_topic, fill_status_topic, log_topic):
-    while True:
-        try:
-            json_data = fetch_json(url)
-            if json_data is not None:
-                client.publish(status_topic, "online", retain=True)
-                client.publish(log_topic, json.dumps(json_data), retain=True)
-                power_value = json_data.get("POWER")
-                if power_value is not None:
-                    client.publish(power_status_topic, 1 if power_value == 1 else 0, retain=True)
-                else:
-                    print("Ключ 'POWER' не найден в ответе")
-                fill_value = json_data.get("zapravka")
-                if fill_value is not None:
-                    client.publish(fill_status_topic, 1 if fill_value == 1 else 0, retain=True)
-                else:
-                    print("Ключ 'zapravka' не найден в ответе")
-            else:
-                client.publish(status_topic, "offline", retain=True)
-        except Exception as e:
-            print(f"Ошибка при проверке статуса: {e}")
-            client.publish(status_topic, "offline", retain=True)
-        time.sleep(5)
+# Параметры MQTT
+MQTT_BROKER = config["mqtt"]["broker"]
+MQTT_PORT = config["mqtt"]["port"]
+MQTT_USERNAME = config["mqtt"]["username"]
+MQTT_PASSWORD = config["mqtt"]["password"]
+MQTT_CLIENT_NAME = config["mqtt"]["name"]
 
-# Функция обработки сообщений MQTT
-def on_message(client, userdata, message):
-    if message.topic == TOPICS["power_on"]:
-        send_request(HTTP_URLS["power_on"])
-    elif message.topic == TOPICS["power_off"]:
-        send_request(HTTP_URLS["power_off"])
-    elif message.topic == TOPICS["fire_mode"]:
-        try:
-            mode = int(message.payload.decode())
-            if 1 <= mode <= 4:
-                url = f"{BASE_URL}/SAVE?select_rez={mode}"
-                send_request(url)
-            else:
-                print(f"Неверный режим: {mode}")
-        except ValueError:
-            print("Неверное значение для режима огня")
-    elif message.topic == TOPICS["audio_mode"]:
-        try:
-            mode = int(message.payload.decode())
-            if 0 <= mode <= 2:
-                url = f"{BASE_URL}/SAVE?AUDIO_rej={mode}"
-                send_request(url)
-            else:
-                print(f"Неверный режим звука: {mode}")
-        except ValueError:
-            print("Неверное значение для режима звука")
-    elif message.topic == TOPICS["settings"]:
-        json_data = fetch_json(HTTP_URLS["settings"])
-        if json_data is not None:
-            # Логгирование в консоль
-            print(f"Получены настройки: {json.dumps(json_data, indent=2)}")
-            # Публикация в топик log
-            client.publish(TOPICS["log"], json.dumps(json_data), retain=False)
-        else:
-            print("Ошибка: Не удалось получить настройки")
-    else:
-        print(f"Получено сообщение: {message.payload.decode()} на топике {message.topic}")
+# Параметры устройства
+DEVICE_BASE_URL = f"http://{config['device']['base_url']}"
+DEVICE = "fireplace"  # Имя устройства
+DEBUG_MODE = config["device"].get("debug", False)  # Режим отладки
 
-# Обработчик успешного подключения
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        print("Успешное подключение к MQTT брокеру")
+# Топики MQTT
+LOG_TOPIC = f"/devices/{DEVICE}/controls/log"
+LOG_META_TOPIC = f"/devices/{DEVICE}/controls/log/meta"
+DEVICE_META_TOPIC = f"/devices/{DEVICE}/meta"
+POWER_TOPIC = f"/devices/{DEVICE}/controls/power"
+POWER_META_TOPIC = f"/devices/{DEVICE}/controls/power/meta"
+POWER_META_TYPE_TOPIC = f"/devices/{DEVICE}/controls/power/meta/type"
+POWER_ON_TOPIC = f"/devices/{DEVICE}/controls/power/on"
+POWER_ERROR_TOPIC = f"/devices/{DEVICE}/controls/power/error"
+FIRE_MODE_TOPIC = f"/devices/{DEVICE}/controls/fire_mode"
+FIRE_MODE_ON_TOPIC = f"/devices/{DEVICE}/controls/fire_mode/on"
+FIRE_MODE_META_TOPIC = f"/devices/{DEVICE}/controls/fire_mode/meta"
+FIRE_MODE_ERROR_TOPIC = f"/devices/{DEVICE}/controls/fire_mode/error"
+AUDIO_MODE_TOPIC = f"/devices/{DEVICE}/controls/audio_mode"
+AUDIO_MODE_ON_TOPIC = f"/devices/{DEVICE}/controls/audio_mode/on"
+AUDIO_MODE_META_TOPIC = f"/devices/{DEVICE}/controls/audio_mode/meta"
+AUDIO_MODE_ERROR_TOPIC = f"/devices/{DEVICE}/controls/audio_mode/error"
 
-        # Инициализация топиков
-        initial_states = {
-            TOPICS["power_on"]: "0",
-            TOPICS["power_off"]: "0",
-            TOPICS["status"]: "offline",
-            TOPICS["fire_mode"]: "2",
-            TOPICS["audio_mode"]: "1",
-            TOPICS["settings"]: "0",
-            TOPICS["power_status"]: 0,
-            TOPICS["fill_status"]: 0,
-            TOPICS["log"]: ""
-        }
-        
-        for topic, state in initial_states.items():
-            client.publish(topic, state, retain=True)
+# Создание MQTT-клиента
+mqtt_client = mqtt.Client(MQTT_CLIENT_NAME)
+mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
-        # Метаинформация для всех топиков
-        meta_data = {
-            TOPICS["meta_fireplace"]: {
-                "driver": "wb-rules",
-                "title": {"en": "Fireplace", "ru": "Камин"}
-            },
-            TOPICS["meta_power_on"]: {
-                "order": 1,
-                "title": {"en": "Power ON", "ru": "Включение"},
-                "type": "pushbutton"
-            },
-            TOPICS["meta_power_off"]: {
-                "order": 2,
-                "title": {"en": "Power OFF", "ru": "Отключение"},
-                "type": "pushbutton"
-            },
-            TOPICS["meta_fire_mode"]: {
-                "order": 3,
-                "title": {"en": "Fire Mode", "ru": "Режим огня"},
-                "type": "range",
-                "min": 1,
-                "max": 4
-            },
-            TOPICS["meta_audio_mode"]: {
-                "order": 4,
-                "title": {"en": "Audio Mode", "ru": "Режим звука"},
-                "type": "range",
-                "min": 0,
-                "max": 2
-            },
-            TOPICS["meta_settings"]: {
-                "order": 5,
-                "title": {"en": "Settings", "ru": "Настройки"},
-                "type": "pushbutton"
-            },
-            TOPICS["meta_status"]: {
-                "order": 6,
-                "title": {"en": "Status", "ru": "Состояние"},
-                "type": "text"
-            },
-            TOPICS["meta_power_status"]: {
-                "order": 7,
-                "title": {"en": "Power Status", "ru": "Статус питания"},
-                "type": "switch",
-                "readonly": True
-            },
-            TOPICS["meta_fill_status"]: {
-                "order": 8,
-                "title": {"en": "Fill", "ru": "Заправка"},
-                "type": "switch",
-                "readonly": True
-            },
-            TOPICS["meta_log"]: { 
-                "order": 9,
-                "title": {"en": "Log", "ru": "Лог"},
-                "type": "text",
-                "readonly": True
-            }
-        }
+# Флаг для корректного завершения программы
+running = True
 
-        for topic, data in meta_data.items():
-            client.publish(topic, json.dumps(data), retain=True)
-
-        client.subscribe([
-			(TOPICS["power_on"], 0),	
-			(TOPICS["power_off"], 0),	
-            (TOPICS["settings"], 0),			
-            (TOPICS["status"], 0),
-            (TOPICS["fire_mode"], 0),
-            (TOPICS["audio_mode"], 0),
-            (TOPICS["log"], 0)
-        ])
-
-        # Запуск фонового потока для проверки статуса
-        Thread(
-            target=check_device_status,
-            args=(client, HTTP_URLS["settings"], TOPICS["status"], TOPICS["power_status"], TOPICS["fill_status"], TOPICS["log"]),
-            daemon=True
-        ).start()
-    else:
-        print(f"Ошибка подключения: {rc}")
-
-# Настройка MQTT-клиента
-client = mqtt.Client()
-client.on_message = on_message
-client.on_connect = on_connect
-client.username_pw_set(USERNAME, PASSWORD)
-client.connect(BROKER, PORT)
-
-# Функция завершения
 def signal_handler(sig, frame):
-    print('Остановка программы...')
-    client.disconnect()
+    """Обработчик сигналов для корректного завершения программы."""
+    global running
+    logger.info("Получен сигнал завершения. Завершение работы...")
+    running = False
     sys.exit(0)
 
+# Регистрация обработчика сигналов
 signal.signal(signal.SIGINT, signal_handler)
-client.loop_forever()
+signal.signal(signal.SIGTERM, signal_handler)
+
+def on_connect(client, userdata, flags, rc):
+    """Обработчик подключения к MQTT-брокеру."""
+    if rc == 0:
+        logger.info("Успешное подключение к MQTT-брокеру")
+        # Публикация meta-топиков
+        publish_meta_topics()
+        # Подписка на топики управления
+        mqtt_client.subscribe(POWER_ON_TOPIC)
+        mqtt_client.subscribe(FIRE_MODE_ON_TOPIC)
+        mqtt_client.subscribe(AUDIO_MODE_ON_TOPIC)
+    else:
+        logger.error(f"Ошибка подключения к MQTT-брокеру: {rc}")
+
+def on_disconnect(client, userdata, rc):
+    """Обработчик отключения от MQTT-брокера."""
+    if rc != 0:
+        logger.warning("Отключение от MQTT-брокера. Попытка переподключения...")
+        while running:
+            try:
+                mqtt_client.reconnect()
+                logger.info("Переподключение к MQTT-брокеру успешно")
+                break
+            except Exception as e:
+                logger.error(f"Ошибка переподключения: {e}. Повторная попытка через 5 секунд...")
+                time.sleep(5)
+
+def publish_meta_topics():
+    """Публикует meta-топики для корректного отображения в интерфейсе."""
+    # Meta для лога
+    log_meta = {
+        "order": 4,
+        "title": {"en": "Log", "ru": "Лог"},
+        "type": "text",
+        "readonly": True
+    }
+    mqtt_client.publish(LOG_META_TOPIC, json.dumps(log_meta), retain=True)
+
+    # Meta для управления power
+    power_meta = {
+        "order": 1,
+        "title": {"en": "Power", "ru": "Включение"},
+        "type": "switch",
+        "readonly": False
+    }
+    mqtt_client.publish(POWER_META_TOPIC, json.dumps(power_meta), retain=True)
+
+    # Type для power (используется в SprutHub для поиска)
+    power_meta_type = "switch"
+    mqtt_client.publish(POWER_META_TYPE_TOPIC, power_meta_type, retain=True)
+
+    # Meta для fire_mode
+    fire_mode_meta = {
+        "order": 2,
+        "title": {"en": "Fire Mode", "ru": "Режим огня"},
+        "type": "range",
+        "min": 0,
+        "max": 3
+    }
+    mqtt_client.publish(FIRE_MODE_META_TOPIC, json.dumps(fire_mode_meta), retain=True)
+
+    # Meta для audio_mode
+    audio_mode_meta = {
+        "order": 3,
+        "title": {"en": "Audio Mode", "ru": "Режим звука"},
+        "type": "range",
+        "min": 0,
+        "max": 2
+    }
+    mqtt_client.publish(AUDIO_MODE_META_TOPIC, json.dumps(audio_mode_meta), retain=True)
+
+    # Meta для устройства
+    device_meta = {
+        "driver": "wb-rules",
+        "title": {"en": "Fireplace", "ru": "Камин"}
+    }
+    mqtt_client.publish(DEVICE_META_TOPIC, json.dumps(device_meta), retain=True)
+
+    logger.info("Meta-топики опубликованы")
+
+def fetch_device_data():
+    """Запрашивает данные у камина."""
+    try:
+        response = requests.get(f"{DEVICE_BASE_URL}/jsonSetings", timeout=5)  # Таймаут 5 секунд
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка запроса данных у камина: {e}")
+        return None
+
+def send_command(url):
+    """Отправляет команду на устройство."""
+    try:
+        response = requests.post(url, timeout=5)  # Таймаут 5 секунд
+        response.raise_for_status()
+        logger.info(f"Команда отправлена: {url}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка отправки команды: {e}")
+
+def on_message(client, userdata, msg):
+    """Обработчик входящих MQTT-сообщений."""
+    if DEBUG_MODE:
+        logger.debug(f"Получено сообщение: {msg.topic} - {msg.payload.decode()}")
+
+    # Обработка команд для power/on
+    if msg.topic == POWER_ON_TOPIC:
+        try:
+            payload = msg.payload.decode().strip().lower()
+            if payload in ["1", "0"]:
+                power_value = 1 if payload in ["1"] else 0
+                send_command(f"{DEVICE_BASE_URL}/analog?POWER={power_value}")
+                mqtt_client.publish(POWER_TOPIC, str(power_value), retain=False)
+        except Exception as e:
+            logger.error(f"Ошибка обработки команды для power/on: {e}")
+
+    # Обработка команд для fire_mode/on
+    elif msg.topic == FIRE_MODE_ON_TOPIC:
+        try:
+            fire_mode = int(msg.payload.decode().strip())
+            if 0 <= fire_mode <= 3:
+                send_command(f"{DEVICE_BASE_URL}/SAVE?select_rez={fire_mode}")
+                mqtt_client.publish(FIRE_MODE_TOPIC, str(fire_mode), retain=False)
+            else:
+                logger.warning(f"Некорректное значение для fire_mode: {fire_mode}")
+        except (ValueError, TypeError) as e:
+            logger.error(f"Ошибка обработки команды для fire_mode/on: {e}")
+
+    # Обработка команд для audio_mode/on
+    elif msg.topic == AUDIO_MODE_ON_TOPIC:
+        try:
+            audio_mode = int(msg.payload.decode().strip())
+            if 0 <= audio_mode <= 2:
+                send_command(f"{DEVICE_BASE_URL}/SAVE?AUDIO_rej={audio_mode}")
+                mqtt_client.publish(AUDIO_MODE_TOPIC, str(audio_mode), retain=False)
+            else:
+                logger.warning(f"Некорректное значение для audio_mode: {audio_mode}")
+        except (ValueError, TypeError) as e:
+            logger.error(f"Ошибка обработки команды для audio_mode/on: {e}")
+
+def main():
+    """Основной цикл программы."""
+    global running
+
+    # Настройка уровня логирования
+    if DEBUG_MODE:
+        logger.setLevel(logging.DEBUG)
+        logger.info("Режим отладки включен")
+    else:
+        logger.setLevel(logging.INFO)
+        mqtt_client.publish(LOG_TOPIC, "Debugging OFF", retain=False)  # Записываем "Debugging OFF"
+        logger.info("Режим отладки выключен")
+
+    # Настройка обработчиков MQTT
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_disconnect = on_disconnect
+    mqtt_client.on_message = on_message
+
+    # Подключение к MQTT-брокеру
+    while running:
+        try:
+            mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+            break
+        except Exception as e:
+            logger.error(f"Ошибка подключения к MQTT-брокеру: {e}. Повторная попытка через 5 секунд...")
+            time.sleep(5)
+
+    mqtt_client.loop_start()
+
+    # Флаг для отслеживания состояния ошибки
+    error_state = False
+
+    # Основной цикл
+    while running:
+        # Запрос данных у камина
+        data = fetch_device_data()
+        if data:
+            # Если данные пришли, сбрасываем ошибку
+            if error_state:
+                mqtt_client.publish(POWER_ERROR_TOPIC, "", retain=False)
+                mqtt_client.publish(FIRE_MODE_ERROR_TOPIC, "", retain=False)
+                mqtt_client.publish(AUDIO_MODE_ERROR_TOPIC, "", retain=False)
+                error_state = False
+
+            if DEBUG_MODE:
+                logger.debug(f"Получены данные: {json.dumps(data, indent=2)}")  # Логируем данные в режиме отладки
+                # Публикация данных в топик лога
+                mqtt_client.publish(LOG_TOPIC, json.dumps(data), retain=False)
+            else:
+                mqtt_client.publish(LOG_TOPIC, "Debugging OFF", retain=False)
+
+            # Обновление топика power
+            if "POWER" in data:
+                try:
+                    power_value = int(data["POWER"])
+                    mqtt_client.publish(POWER_TOPIC, str(power_value), retain=False)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Ошибка преобразования POWER: {e}")
+
+            # Обновление топика fire_mode
+            if "select_rez" in data:
+                try:
+                    fire_mode = int(data["select_rez"])
+                    mqtt_client.publish(FIRE_MODE_TOPIC, str(fire_mode), retain=False)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Ошибка преобразования select_rez: {e}")
+
+            # Обновление топика audio_mode
+            if "AUDIO_rej" in data:
+                try:
+                    audio_mode = int(data["AUDIO_rej"])
+                    mqtt_client.publish(AUDIO_MODE_TOPIC, str(audio_mode), retain=False)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"Ошибка преобразования AUDIO_rej: {e}")
+        else:
+            # Если данные не пришли, публикуем ошибку
+            if not error_state:
+                mqtt_client.publish(POWER_ERROR_TOPIC, "r", retain=False)
+                mqtt_client.publish(FIRE_MODE_ERROR_TOPIC, "r", retain=False)
+                mqtt_client.publish(AUDIO_MODE_ERROR_TOPIC, "r", retain=False)
+                error_state = True
+                logger.warning("Данные от камина не получены. Ошибка записана в топики.")
+
+        # Ожидание 10 секунд
+        time.sleep(10)
+
+    # Корректное завершение работы
+    logger.info("Завершение работы программы...")
+    mqtt_client.loop_stop()
+    mqtt_client.disconnect()
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        logger.error(f"Ошибка в работе программы: {e}")
+    finally:
+        logger.info("Программа завершена")
